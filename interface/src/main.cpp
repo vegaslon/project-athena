@@ -72,7 +72,7 @@ int main(int argc, const char* argv[]) {
     }
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("High Fidelity");
+    parser.setApplicationDescription("Vircadia");
     QCommandLineOption versionOption = parser.addVersionOption();
     QCommandLineOption helpOption = parser.addHelpOption();
 
@@ -218,11 +218,11 @@ int main(int argc, const char* argv[]) {
     }
     qDebug() << "UserActivityLogger is enabled:" << ual.isEnabled();
 
-    if (ual.isEnabled()) {
+    qDebug() << "Crash handler logger is enabled:" << ual.isCrashMonitorEnabled();
+    if (ual.isCrashMonitorEnabled()) {
         auto crashHandlerStarted = startCrashHandler(argv[0]);
         qDebug() << "Crash handler started:" << crashHandlerStarted;
     }
-
 
     const QString& applicationName = getInterfaceSharedMemoryName();
     bool instanceMightBeRunning = true;
@@ -262,7 +262,9 @@ int main(int argc, const char* argv[]) {
         if (socket.waitForConnected(LOCAL_SERVER_TIMEOUT_MS)) {
             if (parser.isSet(urlOption)) {
                 QUrl url = QUrl(parser.value(urlOption));
-                if (url.isValid() && (url.scheme() == URL_SCHEME_HIFI || url.scheme() == URL_SCHEME_HIFIAPP)) {
+                if (url.isValid() && (url.scheme() == URL_SCHEME_HIFI || url.scheme() == URL_SCHEME_HIFIAPP
+                        || url.scheme() == HIFI_URL_SCHEME_HTTP || url.scheme() == HIFI_URL_SCHEME_HTTPS
+                        || url.scheme() == HIFI_URL_SCHEME_FILE)) {
                     qDebug() << "Writing URL to local socket";
                     socket.write(url.toString().toUtf8());
                     if (!socket.waitForBytesWritten(5000)) {

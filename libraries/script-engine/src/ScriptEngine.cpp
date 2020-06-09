@@ -85,9 +85,9 @@
 #include "MIDIEvent.h"
 
 #include "SettingHandle.h"
-// #include "SettingManager.h"
-// #include "SettingInterface.h"
-// #include "SettingHelpers.h"
+#include <AddressManager.h>
+#include <NetworkingConstants.h>
+
 
 const QString ScriptEngine::_SETTINGS_ENABLE_EXTENDED_EXCEPTIONS {
     "com.highfidelity.experimental.enableExtendedJSExceptions"
@@ -736,6 +736,13 @@ void ScriptEngine::init() {
     QScriptValue webSocketConstructorValue = newFunction(WebSocketClass::constructor);
     globalObject().setProperty("WebSocket", webSocketConstructorValue);
 
+    /**jsdoc
+     * Prints a message to the program log and emits {@link Script.printedMessage}.
+     * The message logged is the message values separated by spaces.
+     * <p>Alternatively, you can use {@link Script.print} or one of the {@link console} API methods.</p>
+     * @function print
+     * @param {...*} [message] - The message values to print.
+     */
     globalObject().setProperty("print", newFunction(debugPrint));
 
     QScriptValue audioEffectOptionsConstructorValue = newFunction(AudioEffectOptions::constructor);
@@ -1012,6 +1019,12 @@ void ScriptEngine::addEventHandler(const EntityItemID& entityID, const QString& 
         });
 
         // Two common cases of event handler, differing only in argument signature.
+
+        /**jsdoc
+         * Called when an entity event occurs on an entity as registered with {@link Script.addEventHandler}.
+         * @callback Script~entityEventCallback
+         * @param {Uuid} entityID - The ID of the entity the event has occured on.
+         */
         using SingleEntityHandler = std::function<void(const EntityItemID&)>;
         auto makeSingleEntityHandler = [this](QString eventName) -> SingleEntityHandler {
             return [this, eventName](const EntityItemID& entityItemID) {
@@ -1019,6 +1032,12 @@ void ScriptEngine::addEventHandler(const EntityItemID& entityID, const QString& 
             };
         };
 
+        /**jsdoc
+         * Called when a pointer event occurs on an entity as registered with {@link Script.addEventHandler}.
+         * @callback Script~pointerEventCallback
+         * @param {Uuid} entityID - The ID of the entity the event has occurred on.
+         * @param {PointerEvent} pointerEvent - Details of the event.
+         */
         using PointerHandler = std::function<void(const EntityItemID&, const PointerEvent&)>;
         auto makePointerHandler = [this](QString eventName) -> PointerHandler {
             return [this, eventName](const EntityItemID& entityItemID, const PointerEvent& event) {
@@ -1028,6 +1047,13 @@ void ScriptEngine::addEventHandler(const EntityItemID& entityID, const QString& 
             };
         };
 
+        /**jsdoc
+         * Called when a collision event occurs on an entity as registered with {@link Script.addEventHandler}.
+         * @callback Script~collisionEventCallback
+         * @param {Uuid} entityA - The ID of one entity in the collision.
+         * @param {Uuid} entityB - The ID of the other entity in the collision.
+         * @param {Collision} collisionEvent - Details of the collision.
+         */
         using CollisionHandler = std::function<void(const EntityItemID&, const EntityItemID&, const Collision&)>;
         auto makeCollisionHandler = [this](QString eventName) -> CollisionHandler {
             return [this, eventName](const EntityItemID& idA, const EntityItemID& idB, const Collision& collision) {
@@ -1037,28 +1063,39 @@ void ScriptEngine::addEventHandler(const EntityItemID& entityID, const QString& 
         };
 
         /**jsdoc
-         * <p>The name of an entity event. When the entity event occurs, any function that has been registered for that event via 
-         * {@link Script.addEventHandler} is called with parameters per the entity event.</p>
+         * <p>The name of an entity event. When the entity event occurs, any function that has been registered for that event 
+         * via {@link Script.addEventHandler} is called with parameters per the entity event.</p>
          * <table>
          *   <thead>
-         *     <tr><th>Event Name</th><th>Entity Event</th></tr>
+         *     <tr><th>Event Name</th><th>Callback Type</th><th>Entity Event</th></tr>
          *   </thead>
          *   <tbody>
-         *     <tr><td><code>"enterEntity"</code></td><td>{@link Entities.enterEntity}</td></tr>
-         *     <tr><td><code>"leaveEntity"</code></td><td>{@link Entities.leaveEntity}</td></tr>
-         *     <tr><td><code>"mousePressOnEntity"</code></td><td>{@link Entities.mousePressOnEntity}</td></tr>
-         *     <tr><td><code>"mouseMoveOnEntity"</code></td><td>{@link Entities.mouseMoveOnEntity}</td></tr>
-         *     <tr><td><code>"mouseReleaseOnEntity"</code></td><td>{@link Entities.mouseReleaseOnEntity}</td></tr>
-         *     <tr><td><code>"clickDownOnEntity"</code></td><td>{@link Entities.clickDownOnEntity}</td></tr>
-         *     <tr><td><code>"holdingClickOnEntity"</code></td><td>{@link Entities.holdingClickOnEntity}</td></tr>
-         *     <tr><td><code>"clickReleaseOnEntity"</code></td><td>{@link Entities.clickReleaseOnEntity}</td></tr>
-         *     <tr><td><code>"hoverEnterEntity"</code></td><td>{@link Entities.hoverEnterEntity}</td></tr>
-         *     <tr><td><code>"hoverOverEntity"</code></td><td>{@link Entities.hoverOverEntity}</td></tr>
-         *     <tr><td><code>"hoverLeaveEntity"</code></td><td>{@link Entities.hoverLeaveEntity}</td></tr>
-         *     <tr><td><code>"collisionWithEntity"</code></td><td>{@link Entities.collisionWithEntity}</td></tr>
+         *     <tr><td><code>"enterEntity"</code></td><td>{@link Script~entityEventCallback|entityEventCallback}</td>
+         *       <td>{@link Entities.enterEntity}</td></tr>
+         *     <tr><td><code>"leaveEntity"</code></td><td>{@link Script~entityEventCallback|entityEventCallback}</td>
+         *       <td>{@link Entities.leaveEntity}</td></tr>
+         *     <tr><td><code>"mousePressOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+         *       <td>{@link Entities.mousePressOnEntity}</td></tr>
+         *     <tr><td><code>"mouseMoveOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+         *       <td>{@link Entities.mouseMoveOnEntity}</td></tr>
+         *     <tr><td><code>"mouseReleaseOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+         *       <td>{@link Entities.mouseReleaseOnEntity}</td></tr>
+         *     <tr><td><code>"clickDownOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+         *       <td>{@link Entities.clickDownOnEntity}</td></tr>
+         *     <tr><td><code>"holdingClickOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+         *       <td>{@link Entities.holdingClickOnEntity}</td></tr>
+         *     <tr><td><code>"clickReleaseOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+         *       <td>{@link Entities.clickReleaseOnEntity}</td></tr>
+         *     <tr><td><code>"hoverEnterEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+         *       <td>{@link Entities.hoverEnterEntity}</td></tr>
+         *     <tr><td><code>"hoverOverEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+         *       <td>{@link Entities.hoverOverEntity}</td></tr>
+         *     <tr><td><code>"hoverLeaveEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+         *       <td>{@link Entities.hoverLeaveEntity}</td></tr>
+         *     <tr><td><code>"collisionWithEntity"</code><td>{@link Script~collisionEventCallback|collisionEventCallback}</td>
+         *       </td><td>{@link Entities.collisionWithEntity}</td></tr>
          *   </tbody>
          * </table>
-         *
          * @typedef {string} Script.EntityEvent
          */
         connect(entities.data(), &EntityScriptingInterface::enterEntity, this, makeSingleEntityHandler("enterEntity"));
@@ -2361,32 +2398,59 @@ void ScriptEngine::entityScriptContentAvailable(const EntityItemID& entityID, co
         } else if (testConstructor.isError()) {
             exception = testConstructor;
         }
-    }
-    else {
-      // ENTITY SCRIPT WHITELIST STARTS HERE
+    } else {
+        // ENTITY SCRIPT WHITELIST STARTS HERE
+        auto nodeList = DependencyManager::get<NodeList>();
+        bool passList = false;  // assume unsafe
         QString whitelistPrefix = "[WHITELIST ENTITY SCRIPTS]";
-        QList<QString> safeURLS = { "" };
-        safeURLS += qEnvironmentVariable("EXTRA_WHITELIST").trimmed().split(QRegExp("\\s*,\\s*"), QString::SkipEmptyParts);
+        QList<QString> safeURLPrefixes = { "file:///", "atp:", "cache:" };
+        safeURLPrefixes += qEnvironmentVariable("EXTRA_WHITELIST").trimmed().split(QRegExp("\\s*,\\s*"), QString::SkipEmptyParts);
 
-        // PULL SAFEURLS FROM INTERFACE.JSON Settings
+        // Entity Script Whitelist toggle check.
+        Setting::Handle<bool> whitelistEnabled {"private/whitelistEnabled", false };
+                
+        if (!whitelistEnabled.get()) {
+            passList = true;
+        }
         
+        // Pull SAFEURLS from the Interface.JSON settings.
         QVariant raw = Setting::Handle<QVariant>("private/settingsSafeURLS").get();
         QStringList settingsSafeURLS = raw.toString().trimmed().split(QRegExp("\\s*[,\r\n]+\\s*"), QString::SkipEmptyParts);
-        safeURLS += settingsSafeURLS;
+        safeURLPrefixes += settingsSafeURLS;
+        // END Pull SAFEURLS from the Interface.JSON settings.
         
-        // END PULL SAFEURLS FROM INTERFACE.JSON Settings
+        // Get current domain whitelist bypass, in case an entire domain is whitelisted.
+        QString currentDomain = DependencyManager::get<AddressManager>()->getDomainURL().host();
         
-        bool isInWhitelist = false;  // assume unsafe
-        for (const auto& str : safeURLS) {
-            qCDebug(scriptengine) << whitelistPrefix << "Script URL: " << scriptOrURL << "TESTING AGAINST" << str << "RESULTS IN"
-                     << scriptOrURL.startsWith(str);
-            if (!str.isEmpty() && scriptOrURL.startsWith(str)) {
-                isInWhitelist = true;
-                qCDebug(scriptengine) << whitelistPrefix << "Script approved.";
-                break;  // bail early since we found a match
+        QString domainSafeIP = nodeList->getDomainHandler().getHostname();
+        QString domainSafeURL = URL_SCHEME_HIFI + "://" + currentDomain;
+        for (const auto& str : safeURLPrefixes) {
+            if (domainSafeURL.startsWith(str) || domainSafeIP.startsWith(str)) {
+                qCDebug(scriptengine) << whitelistPrefix << "Whitelist Bypassed, entire domain is whitelisted. Current Domain Host: " 
+                    << nodeList->getDomainHandler().getHostname()
+                    << "Current Domain: " << currentDomain;
+                passList = true;
             }
         }
-        if (!isInWhitelist) {
+        // END bypass whitelist based on current domain.
+
+        // Start processing scripts through the whitelist.
+        if (ScriptEngine::getContext() == "entity_server") { // If running on the server, do not engage whitelist.
+            passList = true;
+        } else if (!passList) { // If waved through, do not engage whitelist.
+            for (const auto& str : safeURLPrefixes) {
+                qCDebug(scriptengine) << whitelistPrefix << "Script URL: " << scriptOrURL << "TESTING AGAINST" << str << "RESULTS IN"
+                    << scriptOrURL.startsWith(str);
+                if (!str.isEmpty() && scriptOrURL.startsWith(str)) {
+                    passList = true;
+                    qCDebug(scriptengine) << whitelistPrefix << "Script approved.";
+                    break; // Bail early since we found a match.
+                }
+            }
+        }
+        // END processing of scripts through the whitelist.
+
+        if (!passList) { // If the entity failed to pass for any reason, it's blocked and an error is thrown.
             qCDebug(scriptengine) << whitelistPrefix << "(disabled entity script)" << entityID.toString() << scriptOrURL;
             exception = makeError("UNSAFE_ENTITY_SCRIPTS == 0");
         } else {

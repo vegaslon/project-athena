@@ -29,6 +29,8 @@
 #include <VrMenu.h>
 #include <ScriptEngines.h>
 #include <MenuItemProperties.h>
+#include <ui/types/FileTypeProfile.h>
+#include <ui/types/HFWebEngineProfile.h>
 
 #include "Application.h"
 #include "AccountManager.h"
@@ -221,9 +223,9 @@ Menu::Menu() {
     MenuWrapper* startupLocationMenu = navigateMenu->addMenu(MenuOption::StartUpLocation);
     QActionGroup* startupLocatiopnGroup = new QActionGroup(startupLocationMenu);
     startupLocatiopnGroup->setExclusive(true);
-    startupLocatiopnGroup->addAction(addCheckableActionToQMenuAndActionHash(startupLocationMenu, MenuOption::HomeLocation, 0, 
+    startupLocatiopnGroup->addAction(addCheckableActionToQMenuAndActionHash(startupLocationMenu, MenuOption::HomeLocation, 0,
         false));
-    startupLocatiopnGroup->addAction(addCheckableActionToQMenuAndActionHash(startupLocationMenu, MenuOption::LastLocation, 0, 
+    startupLocatiopnGroup->addAction(addCheckableActionToQMenuAndActionHash(startupLocationMenu, MenuOption::LastLocation, 0,
         true));
 
     // Settings menu ----------------------------------
@@ -286,15 +288,14 @@ Menu::Menu() {
 			hmd->toggleShouldShowTablet();
 		}
     });
-    
-    // Settings > Entity Script Whitelist
-    action = addActionToQMenuAndActionHash(settingsMenu, "Entity Script Whitelist");
+
+    // Settings > Entity Script / QML Whitelist
+    action = addActionToQMenuAndActionHash(settingsMenu, "Entity Script / QML Whitelist");
     connect(action, &QAction::triggered, [] {
         auto tablet = DependencyManager::get<TabletScriptingInterface>()->getTablet("com.highfidelity.interface.tablet.system");
         auto hmd = DependencyManager::get<HMDScriptingInterface>();
-        
-        DependencyManager::get<OffscreenUi>()->clearCache();
-        tablet->pushOntoStack("hifi/dialogs/security/EntityScriptWhitelist.qml");
+
+        tablet->pushOntoStack("hifi/dialogs/security/EntityScriptQMLWhitelist.qml");
 
         if (!hmd->getShouldShowTablet()) {
             hmd->toggleShouldShowTablet();
@@ -309,10 +310,10 @@ Menu::Menu() {
 
     // Developer menu ----------------------------------
     MenuWrapper* developerMenu = addMenu("Developer", "Developer");
-    
+
     // Developer > Scripting >>>
     MenuWrapper* scriptingOptionsMenu = developerMenu->addMenu("Scripting");
-    
+
     // Developer > Scripting > Console...
     addActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::Console, Qt::CTRL | Qt::ALT | Qt::Key_J,
                                   DependencyManager::get<StandAloneJSConsole>().data(),
@@ -327,7 +328,7 @@ Menu::Menu() {
         defaultScriptsLoc.setPath(defaultScriptsLoc.path() + "developer/utilities/tools/currentAPI.js");
         DependencyManager::get<ScriptEngines>()->loadScript(defaultScriptsLoc.toString());
     });
-    
+
     // Developer > Scripting > Entity Script Server Log
     auto essLogAction = addActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::EntityScriptServerLog, 0,
                                                       qApp, SLOT(toggleEntityScriptServerLogDialog()));
@@ -347,7 +348,7 @@ Menu::Menu() {
     // Developer > Scripting > Verbose Logging
     addCheckableActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::VerboseLogging, 0, false,
                                            qApp, SLOT(updateVerboseLogging()));
-    
+
     // Developer > Scripting > Enable Speech Control API
 #if defined(Q_OS_MAC) || defined(Q_OS_WIN)
     auto speechRecognizer = DependencyManager::get<SpeechRecognizer>();
@@ -359,20 +360,20 @@ Menu::Menu() {
         UNSPECIFIED_POSITION);
     connect(speechRecognizer.data(), SIGNAL(enabledUpdated(bool)), speechRecognizerAction, SLOT(setChecked(bool)));
 #endif
-    
+
     // Developer > UI >>>
     MenuWrapper* uiOptionsMenu = developerMenu->addMenu("UI");
     action = addCheckableActionToQMenuAndActionHash(uiOptionsMenu, MenuOption::DesktopTabletToToolbar, 0,
                                                     qApp->getDesktopTabletBecomesToolbarSetting());
-    
+
     // Developer > UI > Show Overlays
     addCheckableActionToQMenuAndActionHash(uiOptionsMenu, MenuOption::Overlays, 0, true);
-    
+
     // Developer > UI > Desktop Tablet Becomes Toolbar
     connect(action, &QAction::triggered, [action] {
         qApp->setDesktopTabletBecomesToolbarSetting(action->isChecked());
     });
-    
+
      // Developer > UI > HMD Tablet Becomes Toolbar
     action = addCheckableActionToQMenuAndActionHash(uiOptionsMenu, MenuOption::HMDTabletToToolbar, 0,
                                                     qApp->getHmdTabletBecomesToolbarSetting());
@@ -596,14 +597,32 @@ Menu::Menu() {
             QString("hifi/tablet/TabletNetworkingPreferences.qml"), "NetworkingPreferencesDialog");
     });
     addActionToQMenuAndActionHash(networkMenu, MenuOption::ReloadContent, 0, qApp, SLOT(reloadResourceCaches()));
-    addActionToQMenuAndActionHash(networkMenu, MenuOption::ClearDiskCache, 0,
-        DependencyManager::get<AssetClient>().data(), SLOT(clearCache()));
+
+	action = addActionToQMenuAndActionHash(networkMenu, MenuOption::ClearDiskCaches);
+    connect(action, &QAction::triggered, [] {
+        // The following caches are cleared immediately
+        DependencyManager::get<AssetClient>()->clearCache();
+#ifndef Q_OS_ANDROID
+        FileTypeProfile::clearCache();
+        HFWebEngineProfile::clearCache();
+#endif
+
+        // Clear the KTX cache on the next restart. It can't be cleared immediately because its files might be in use.
+        Setting::Handle<int>(KTXCache::SETTING_VERSION_NAME, KTXCache::INVALID_VERSION).set(KTXCache::INVALID_VERSION);
+    });
+
     addCheckableActionToQMenuAndActionHash(networkMenu,
         MenuOption::DisableActivityLogger,
         0,
         false,
         &UserActivityLogger::getInstance(),
         SLOT(disable(bool)));
+    addCheckableActionToQMenuAndActionHash(networkMenu,
+        MenuOption::DisableCrashLogger,
+        0,
+        false,
+        &UserActivityLogger::getInstance(),
+        SLOT(crashMonitorDisable(bool)));
     addActionToQMenuAndActionHash(networkMenu, MenuOption::ShowDSConnectTable, 0,
         qApp, SLOT(loadDomainConnectionDialog()));
 
@@ -689,7 +708,7 @@ Menu::Menu() {
     result = QProcessEnvironment::systemEnvironment().contains(HIFI_SHOW_DEVELOPER_CRASH_MENU);
     if (result) {
         MenuWrapper* crashMenu = developerMenu->addMenu("Crash");
-    
+
         // Developer > Crash > Display Crash Options
         addCheckableActionToQMenuAndActionHash(crashMenu, MenuOption::DisplayCrashOptions, 0, true);
 
@@ -728,7 +747,7 @@ Menu::Menu() {
 
         addActionToQMenuAndActionHash(crashMenu, MenuOption::CrashOnShutdown, 0, qApp, SLOT(crashOnShutdown()));
     }
-    
+
 
     // Developer > Show Statistics
     addCheckableActionToQMenuAndActionHash(developerMenu, MenuOption::Stats, 0, true);
@@ -769,30 +788,30 @@ Menu::Menu() {
     // Help/Application menu ----------------------------------
     MenuWrapper * helpMenu = addMenu("Help");
 
-    // Help > About High Fidelity
-    action = addActionToQMenuAndActionHash(helpMenu, "About High Fidelity");
+    // Help > About Vircadia
+    action = addActionToQMenuAndActionHash(helpMenu, "About Vircadia");
     connect(action, &QAction::triggered, [] {
         qApp->showDialog(QString("hifi/dialogs/AboutDialog.qml"),
             QString("hifi/dialogs/TabletAboutDialog.qml"), "AboutDialog");
     });
     helpMenu->addSeparator();
 
-    // Help > HiFi Docs
+    // Help > Vircadia Docs
     action = addActionToQMenuAndActionHash(helpMenu, "Online Documentation");
     connect(action, &QAction::triggered, qApp, [] {
-        QDesktopServices::openUrl(QUrl("https://docs.highfidelity.com/"));
+        QDesktopServices::openUrl(QUrl("https://docs.vircadia.dev/"));
     });
 
-    // Help > HiFi Forum
-    action = addActionToQMenuAndActionHash(helpMenu, "Online Forums");
+    // Help > Vircadia Forum
+    /* action = addActionToQMenuAndActionHash(helpMenu, "Online Forums");
     connect(action, &QAction::triggered, qApp, [] {
         QDesktopServices::openUrl(QUrl("https://forums.highfidelity.com/"));
-    });
+    }); */
 
     // Help > Scripting Reference
     action = addActionToQMenuAndActionHash(helpMenu, "Online Script Reference");
     connect(action, &QAction::triggered, qApp, [] {
-        QDesktopServices::openUrl(QUrl("https://docs.highfidelity.com/api-reference"));
+        QDesktopServices::openUrl(QUrl("https://apidocs.vircadia.dev/"));
     });
 
     addActionToQMenuAndActionHash(helpMenu, "Controls Reference", 0, qApp, SLOT(showHelp()));
@@ -802,13 +821,13 @@ Menu::Menu() {
     // Help > Release Notes
     action = addActionToQMenuAndActionHash(helpMenu, "Release Notes");
     connect(action, &QAction::triggered, qApp, [] {
-        QDesktopServices::openUrl(QUrl("https://docs.highfidelity.com/release-notes.html"));
+        QDesktopServices::openUrl(QUrl("https://docs.vircadia.dev/release-notes.html"));
     });
 
     // Help > Report a Bug!
     action = addActionToQMenuAndActionHash(helpMenu, "Report a Bug!");
     connect(action, &QAction::triggered, qApp, [] {
-        QDesktopServices::openUrl(QUrl("mailto:support@highfidelity.com"));
+        QDesktopServices::openUrl(QUrl("https://github.com/kasenvr/project-athena/issues"));
     });
 }
 

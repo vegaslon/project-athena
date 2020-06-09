@@ -4,6 +4,7 @@
 //  Created by David Rowe on 3 Jun 2015
 //  Copyright 2015 High Fidelity, Inc.
 //  Distributed under the Apache License, Version 2.0.
+//
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
 
@@ -84,7 +85,9 @@ FocusScope {
         Image {
             id: banner
             anchors.centerIn: parent
-            source: "../images/high-fidelity-banner.svg"
+            sourceSize.width: 500
+            sourceSize.height: 91
+            source: "../images/vircadia-logo.svg"
             horizontalAlignment: Image.AlignHCenter
         }
     }

@@ -111,6 +111,7 @@
 #include <ModelEntityItem.h>
 #include <NetworkAccessManager.h>
 #include <NetworkingConstants.h>
+#include <MetaverseAPI.h>
 #include <ObjectMotionState.h>
 #include <OctalCode.h>
 #include <OctreeSceneStats.h>
@@ -184,6 +185,7 @@
 #include "scripting/AssetMappingsScriptingInterface.h"
 #include "scripting/ClipboardScriptingInterface.h"
 #include "scripting/DesktopScriptingInterface.h"
+#include "scripting/ScreenshareScriptingInterface.h"
 #include "scripting/AccountServicesScriptingInterface.h"
 #include "scripting/HMDScriptingInterface.h"
 #include "scripting/MenuScriptingInterface.h"
@@ -511,27 +513,6 @@ std::atomic<uint64_t> DeadlockWatchdogThread::_maxElapsed;
 std::atomic<int> DeadlockWatchdogThread::_maxElapsedAverage;
 ThreadSafeMovingAverage<int, DeadlockWatchdogThread::HEARTBEAT_SAMPLES> DeadlockWatchdogThread::_movingAverage;
 
-bool isDomainURL(QUrl url) {
-    if (!url.isValid()) {
-        return false;
-    }
-    if (url.scheme() == URL_SCHEME_HIFI) {
-        return true;
-    }
-    if (url.scheme() != HIFI_URL_SCHEME_FILE) {
-        // TODO -- once Octree::readFromURL no-longer takes over the main event-loop, serverless-domain urls can
-        // be loaded over http(s)
-        // && url.scheme() != HIFI_URL_SCHEME_HTTP &&
-        // url.scheme() != HIFI_URL_SCHEME_HTTPS
-        return false;
-    }
-    if (url.path().endsWith(".json", Qt::CaseInsensitive) ||
-        url.path().endsWith(".json.gz", Qt::CaseInsensitive)) {
-        return true;
-    }
-    return false;
-}
-
 #ifdef Q_OS_WIN
 static const UINT UWM_IDENTIFY_INSTANCES =
     RegisterWindowMessage("UWM_IDENTIFY_INSTANCES_{8AB82783-B74A-4258-955B-8188C22AA0D6}_" + qgetenv("USERNAME"));
@@ -563,14 +544,6 @@ public:
                 return true;
             }
 
-            if (message->message == WM_COPYDATA) {
-                COPYDATASTRUCT* pcds = (COPYDATASTRUCT*)(message->lParam);
-                QUrl url = QUrl((const char*)(pcds->lpData));
-                if (isDomainURL(url)) {
-                    DependencyManager::get<AddressManager>()->handleLookupString(url.toString());
-                    return true;
-                }
-            }
             // Attempting to close MIDI interfaces of a hot-unplugged device can result in audio-driver deadlock.
             // Detecting MIDI devices that have been added/removed after starting Inteface has been disabled.
             // https://support.microsoft.com/en-us/help/4460006/midi-device-app-hangs-when-former-midi-api-is-used
@@ -683,8 +656,8 @@ private:
 /**jsdoc
  * <p>The <code>Controller.Hardware.Application</code> object has properties representing Interface's state. The property
  * values are integer IDs, uniquely identifying each output. <em>Read-only.</em></p>
- * <p>These states can be mapped to actions or functions or <code>Controller.Standard</code> items in a {@link RouteObject} 
- * mapping (e.g., using the {@link RouteObject#when} method). Each data value is either <code>1.0</code> for "true" or 
+ * <p>These states can be mapped to actions or functions or <code>Controller.Standard</code> items in a {@link RouteObject}
+ * mapping (e.g., using the {@link RouteObject#when} method). Each data value is either <code>1.0</code> for "true" or
  * <code>0.0</code> for "false".</p>
  * <table>
  *   <thead>
@@ -692,14 +665,21 @@ private:
  *   </thead>
  *   <tbody>
  *     <tr><td><code>CameraFirstPerson</code></td><td>number</td><td>number</td><td>The camera is in first-person mode.
- *       </td></tr>
+ *       <em>Legacy first person camera mode.</em></td></tr>
+ *     <tr><td><code>CameraFirstPersonLookAt</code></td><td>number</td><td>number</td><td>The camera is in first-person mode.
+ *       <em>Default first person camera mode.</em></td></tr>
  *     <tr><td><code>CameraThirdPerson</code></td><td>number</td><td>number</td><td>The camera is in third-person mode.
- *       </td></tr>
- *     <tr><td><code>CameraFSM</code></td><td>number</td><td>number</td><td>The camera is in full screen mirror mode.</td></tr>
+ *       <em>Legacy third person camera mode.</em></td></tr>
+ *     <tr><td><code>CameraLookAt</code></td><td>number</td><td>number</td><td>The camera is in third-person mode.
+ *       <em>Default third person camera mode.</em></td></tr>
+ *     <tr><td><code>CameraFSM</code></td><td>number</td><td>number</td><td>The camera is in full screen mirror mode.
+ *       <em>Legacy "look at myself" behavior.</em></td></tr>
+ *     <tr><td><code>CameraSelfie</code></td><td>number</td><td>number</td><td>The camera is in selfie mode.
+ *       <em>Default "look at myself" camera mode.</em></td></tr>
  *     <tr><td><code>CameraIndependent</code></td><td>number</td><td>number</td><td>The camera is in independent mode.</td></tr>
  *     <tr><td><code>CameraEntity</code></td><td>number</td><td>number</td><td>The camera is in entity mode.</td></tr>
  *     <tr><td><code>InHMD</code></td><td>number</td><td>number</td><td>The user is in HMD mode.</td></tr>
- *     <tr><td><code>AdvancedMovement</code></td><td>number</td><td>number</td><td>Advanced movement (walking) controls are 
+ *     <tr><td><code>AdvancedMovement</code></td><td>number</td><td>number</td><td>Advanced movement (walking) controls are
  *       enabled.</td></tr>
  *     <tr><td><code>StrafeEnabled</code></td><td>number</td><td>number</td><td>Strafing is enabled</td></tr>
  *     <tr><td><code>LeftHandDominant</code></td><td>number</td><td>number</td><td>Dominant hand set to left.</td></tr>
@@ -849,7 +829,7 @@ bool setupEssentials(int& argc, char** argv, bool runningMarkerExisted) {
         audioDLLPath += "/audioWin7";
     }
     QCoreApplication::addLibraryPath(audioDLLPath);
-#endif 
+#endif
 
     QString defaultScriptsOverrideOption = getCmdOption(argc, constArgv, "--defaultScriptsOverride");
 
@@ -967,8 +947,9 @@ bool setupEssentials(int& argc, char** argv, bool runningMarkerExisted) {
     DependencyManager::set<KeyboardScriptingInterface>();
     DependencyManager::set<GrabManager>();
     DependencyManager::set<AvatarPackager>();
+    DependencyManager::set<ScreenshareScriptingInterface>();
     PlatformHelper::setup();
-    
+
     QObject::connect(PlatformHelper::instance(), &PlatformHelper::systemWillWake, [] {
         QMetaObject::invokeMethod(DependencyManager::get<NodeList>().data(), "noteAwakening", Qt::QueuedConnection);
         QMetaObject::invokeMethod(DependencyManager::get<AudioClient>().data(), "noteAwakening", Qt::QueuedConnection);
@@ -1111,8 +1092,8 @@ Application::Application(int& argc, char** argv, QElapsedTimer& startupTimer, bo
     {
         // identify gpu as early as possible to help identify OpenGL initialization errors.
         auto gpuIdent = GPUIdent::getInstance();
-        setCrashAnnotation("gpu_name", gpuIdent->getName().toStdString());
-        setCrashAnnotation("gpu_driver", gpuIdent->getDriver().toStdString());
+        setCrashAnnotation("sentry[contexts][gpu][name]", gpuIdent->getName().toStdString());
+        setCrashAnnotation("sentry[contexts][gpu][version]", gpuIdent->getDriver().toStdString());
         setCrashAnnotation("gpu_memory", std::to_string(gpuIdent->getMemory()));
     }
 
@@ -1158,7 +1139,7 @@ Application::Application(int& argc, char** argv, QElapsedTimer& startupTimer, bo
     QFontDatabase::addApplicationFont(PathUtils::resourcesPath() + "fonts/Graphik-SemiBold.ttf");
     QFontDatabase::addApplicationFont(PathUtils::resourcesPath() + "fonts/Graphik-Regular.ttf");
     QFontDatabase::addApplicationFont(PathUtils::resourcesPath() + "fonts/Graphik-Medium.ttf");
-    _window->setWindowTitle("High Fidelity");
+    _window->setWindowTitle("Vircadia");
 
     Model::setAbstractViewStateInterface(this); // The model class will sometimes need to know view state details from us
 
@@ -1181,7 +1162,7 @@ Application::Application(int& argc, char** argv, QElapsedTimer& startupTimer, bo
         deadlockWatchdogThread->setMainThreadID(QThread::currentThreadId());
         deadlockWatchdogThread->start();
 
-        // Pause the deadlock watchdog when we sleep, or it might 
+        // Pause the deadlock watchdog when we sleep, or it might
         // trigger a false positive when we wake back up
         auto platformHelper = PlatformHelper::instance();
 
@@ -1216,7 +1197,7 @@ Application::Application(int& argc, char** argv, QElapsedTimer& startupTimer, bo
 
     // set the account manager's root URL and trigger a login request if we don't have the access token
     accountManager->setIsAgent(true);
-    accountManager->setAuthURL(NetworkingConstants::METAVERSE_SERVER_URL());
+    accountManager->setAuthURL(MetaverseAPI::getCurrentMetaverseServerURL());
     if (!accountManager->hasKeyPair()) {
         accountManager->generateNewUserKeypair();
     }
@@ -2936,6 +2917,7 @@ Application::~Application() {
     DependencyManager::destroy<SoundCache>();
     DependencyManager::destroy<OctreeStatsProvider>();
     DependencyManager::destroy<GeometryCache>();
+    DependencyManager::destroy<ScreenshareScriptingInterface>();
 
     DependencyManager::get<ResourceManager>()->cleanup();
 
@@ -3184,7 +3166,7 @@ void Application::showLoginScreen() {
         QJsonObject loginData = {};
         loginData["action"] = "login dialog popped up";
         UserActivityLogger::getInstance().logAction("encourageLoginDialog", loginData);
-        _window->setWindowTitle("High Fidelity");
+        _window->setWindowTitle("Vircadia");
     } else {
         resumeAfterLoginDialogActionTaken();
     }
@@ -3195,17 +3177,39 @@ void Application::showLoginScreen() {
 #endif
 }
 
-static const QUrl AUTHORIZED_EXTERNAL_QML_SOURCE { "https://content.highfidelity.com/Experiences/Releases" };
+static const QUrl AUTHORIZED_EXTERNAL_QML_SOURCE { "https://cdn.vircadia.com/community-apps/applications" };
 
 void Application::initializeUi() {
 
     // Allow remote QML content from trusted sources ONLY
     {
         auto defaultUrlValidator = OffscreenQmlSurface::getUrlValidator();
-        auto newValidator = [=](const QUrl& url)->bool {
+        auto newValidator = [=](const QUrl& url) -> bool {
+            QString whitelistPrefix = "[WHITELIST ENTITY SCRIPTS]";
+            QList<QString> safeURLS = { "" };
+            safeURLS += qEnvironmentVariable("EXTRA_WHITELIST").trimmed().split(QRegExp("\\s*,\\s*"), QString::SkipEmptyParts);
+
+            // PULL SAFEURLS FROM INTERFACE.JSON Settings
+
+            QVariant raw = Setting::Handle<QVariant>("private/settingsSafeURLS").get();
+            QStringList settingsSafeURLS = raw.toString().trimmed().split(QRegExp("\\s*[,\r\n]+\\s*"), QString::SkipEmptyParts);
+            safeURLS += settingsSafeURLS;
+
+            // END PULL SAFEURLS FROM INTERFACE.JSON Settings
+            
             if (AUTHORIZED_EXTERNAL_QML_SOURCE.isParentOf(url)) {
                 return true;
+            } else {
+                for (const auto& str : safeURLS) {
+                    if (!str.isEmpty() && str.endsWith(".qml") && url.toString().endsWith(".qml") &&
+                        url.toString().startsWith(str)) {
+                        qCDebug(interfaceapp) << "Found matching url!" << url.host();
+                        return true;
+                    }
+                }
             }
+
+            qCDebug(interfaceapp) << "No matching url" << url.host();
             return defaultUrlValidator(url);
         };
         OffscreenQmlSurface::setUrlValidator(newValidator);
@@ -3409,6 +3413,10 @@ void Application::initializeUi() {
 
 
     setIsInterstitialMode(true);
+
+#if defined(DISABLE_QML) && defined(Q_OS_LINUX)
+    resumeAfterLoginDialogActionTaken();
+#endif
 }
 
 
@@ -3447,7 +3455,7 @@ void Application::onDesktopRootContextCreated(QQmlContext* surfaceContext) {
     surfaceContext->setContextProperty("Users", DependencyManager::get<UsersScriptingInterface>().data());
 
     surfaceContext->setContextProperty("UserActivityLogger", DependencyManager::get<UserActivityLoggerScriptingInterface>().data());
-
+    surfaceContext->setContextProperty("Screenshare", DependencyManager::get<ScreenshareScriptingInterface>().data());
     surfaceContext->setContextProperty("Camera", &_myCamera);
 
 #if defined(Q_OS_MAC) || defined(Q_OS_WIN)
@@ -3553,6 +3561,7 @@ void Application::userKickConfirmation(const QUuid& nodeID) {
 }
 
 void Application::setupQmlSurface(QQmlContext* surfaceContext, bool setAdditionalContextProperties) {
+    surfaceContext->setContextProperty("Screenshare", DependencyManager::get<ScreenshareScriptingInterface>().data());
     surfaceContext->setContextProperty("Users", DependencyManager::get<UsersScriptingInterface>().data());
     surfaceContext->setContextProperty("HMD", DependencyManager::get<HMDScriptingInterface>().data());
     surfaceContext->setContextProperty("UserActivityLogger", DependencyManager::get<UserActivityLoggerScriptingInterface>().data());
@@ -3781,9 +3790,8 @@ void Application::setPreferredCursor(const QString& cursorName) {
 
     if (_displayPlugin && _displayPlugin->isHmd()) {
         _preferredCursor.set(cursorName.isEmpty() ? DEFAULT_CURSOR_NAME : cursorName);
-    }
-    else { 
-        _preferredCursor.set(cursorName.isEmpty() ? Cursor::Manager::getIconName(Cursor::Icon::SYSTEM) : cursorName); 
+    } else {
+        _preferredCursor.set(cursorName.isEmpty() ? Cursor::Manager::getIconName(Cursor::Icon::SYSTEM) : cursorName);
     }
 
     showCursor(Cursor::Manager::lookupIcon(_preferredCursor.get()));
@@ -3970,7 +3978,7 @@ void Application::handleSandboxStatus(QNetworkReply* reply) {
         DependencyManager::get<AddressManager>()->loadSettings(addressLookupString);
         sentTo = SENT_TO_PREVIOUS_LOCATION;
     }
-    
+
     UserActivityLogger::getInstance().logAction("startup_sent_to", {
         { "sent_to", sentTo },
         { "sandbox_is_running", sandboxIsRunning },
@@ -4038,7 +4046,7 @@ void Application::setIsServerlessMode(bool serverlessDomain) {
     }
 }
 
-std::map<QString, QString> Application::prepareServerlessDomainContents(QUrl domainURL) {
+std::map<QString, QString> Application::prepareServerlessDomainContents(QUrl domainURL, QByteArray data) {
     QUuid serverlessSessionID = QUuid::createUuid();
     getMyAvatar()->setSessionUUID(serverlessSessionID);
     auto nodeList = DependencyManager::get<NodeList>();
@@ -4049,14 +4057,13 @@ std::map<QString, QString> Application::prepareServerlessDomainContents(QUrl dom
     permissions.setAll(true);
     nodeList->setPermissions(permissions);
 
-    // we can't import directly into the main tree because we would need to lock it, and
-    // Octree::readFromURL calls loop.exec which can run code which will also attempt to lock the tree.
+    // FIXME: Lock the main tree and import directly into it.
     EntityTreePointer tmpTree(new EntityTree());
     tmpTree->setIsServerlessMode(true);
     tmpTree->createRootElement();
     auto myAvatar = getMyAvatar();
     tmpTree->setMyAvatar(myAvatar);
-    bool success = tmpTree->readFromURL(domainURL.toString());
+    bool success = tmpTree->readFromByteArray(domainURL.toString(), data);
     if (success) {
         tmpTree->reaverageOctreeElements();
         tmpTree->sendEntities(&_entityEditSender, getEntities()->getTree(), 0, 0, 0);
@@ -4079,12 +4086,26 @@ void Application::loadServerlessDomain(QUrl domainURL) {
         return;
     }
 
-    auto namedPaths = prepareServerlessDomainContents(domainURL);
-    auto nodeList = DependencyManager::get<NodeList>();
+    QString trimmedUrl = domainURL.toString().trimmed();
+    bool DEFAULT_IS_OBSERVABLE = true;
+    const qint64 DEFAULT_CALLER_ID = -1;
+    auto request = DependencyManager::get<ResourceManager>()->createResourceRequest(
+        this, trimmedUrl, DEFAULT_IS_OBSERVABLE, DEFAULT_CALLER_ID, "Application::loadServerlessDomain");
 
-    nodeList->getDomainHandler().connectedToServerless(namedPaths);
+    if (!request) {
+        return;
+    }
 
-    _fullSceneReceivedCounter++;
+    connect(request, &ResourceRequest::finished, this, [=]() {
+        if (request->getResult() == ResourceRequest::Success) {
+            auto namedPaths = prepareServerlessDomainContents(domainURL, request->getData());
+            auto nodeList = DependencyManager::get<NodeList>();
+            nodeList->getDomainHandler().connectedToServerless(namedPaths);
+            _fullSceneReceivedCounter++;
+        }
+        request->deleteLater();
+    });
+    request->send();
 }
 
 void Application::loadErrorDomain(QUrl domainURL) {
@@ -4093,16 +4114,7 @@ void Application::loadErrorDomain(QUrl domainURL) {
         return;
     }
 
-    if (domainURL.isEmpty()) {
-        return;
-    }
-
-    auto namedPaths = prepareServerlessDomainContents(domainURL);
-    auto nodeList = DependencyManager::get<NodeList>();
-
-    nodeList->getDomainHandler().loadedErrorDomain(namedPaths);
-
-    _fullSceneReceivedCounter++;
+    loadServerlessDomain(domainURL);
 }
 
 bool Application::importImage(const QString& urlString) {
@@ -4201,7 +4213,7 @@ bool Application::event(QEvent* event) {
             idle();
 
 #ifdef DEBUG_EVENT_QUEUE_DEPTH
-            // The event queue may very well grow beyond 400, so 
+            // The event queue may very well grow beyond 400, so
             // this code should only be enabled on local builds
             {
                 int count = ::hifi::qt::getEventQueueSize(QThread::currentThread());
@@ -4240,7 +4252,7 @@ bool Application::event(QEvent* event) {
         { //testing to see if we can set focus when focus is not set to root window.
             _glWidget->activateWindow();
             _glWidget->setFocus();
-            return true; 
+            return true;
         }
 
         case QEvent::TouchBegin:
@@ -4884,6 +4896,9 @@ void Application::touchEndEvent(QTouchEvent* event) {
 }
 
 void Application::touchGestureEvent(QGestureEvent* event) {
+    if (_keyboardMouseDevice->isActive()) {
+        _keyboardMouseDevice->touchGestureEvent(event);
+    }
     if (_touchscreenDevice && _touchscreenDevice->isActive()) {
         _touchscreenDevice->touchGestureEvent(event);
     }
@@ -5222,7 +5237,7 @@ void Application::idle() {
         }
     }
 #endif
-    
+
     checkChangeCursor();
 
 #if !defined(DISABLE_QML)
@@ -5475,7 +5490,7 @@ void Application::loadSettings() {
     RenderScriptingInterface::getInstance()->loadSettings();
 
     // Setup the PerformanceManager which will enforce the several settings to match the Preset
-    // On the first run, the Preset is evaluated from the 
+    // On the first run, the Preset is evaluated from the
     getPerformanceManager().setupPerformancePresetSettings(_firstRun.get());
 
     // finish initializing the camera, based on everything we checked above. Third person camera will be used if no settings
@@ -5521,6 +5536,8 @@ bool Application::importEntities(const QString& urlOrFilename, const bool isObse
     _entityClipboard->withWriteLock([&] {
         _entityClipboard->eraseAllOctreeElements();
 
+        // FIXME: readFromURL() can take over the main event loop which may cause problems, especially if downloading the JSON
+        // from the Web.
         success = _entityClipboard->readFromURL(urlOrFilename, isObservable, callerId);
         if (success) {
             _entityClipboard->reaverageOctreeElements();
@@ -5672,6 +5689,7 @@ void Application::resumeAfterLoginDialogActionTaken() {
         return;
     }
 
+#if !defined(DISABLE_QML)
     if (!isHMDMode() && getDesktopTabletBecomesToolbarSetting()) {
         auto toolbar = DependencyManager::get<ToolbarScriptingInterface>()->getToolbar("com.highfidelity.interface.toolbar.system");
         toolbar->writeProperty("visible", true);
@@ -5681,6 +5699,7 @@ void Application::resumeAfterLoginDialogActionTaken() {
     }
 
     updateSystemTabletMode();
+#endif
 
     {
         auto userInputMapper = DependencyManager::get<UserInputMapper>();
@@ -5831,12 +5850,7 @@ void Application::centerUI() {
 
 void Application::cycleCamera() {
     auto menu = Menu::getInstance();
-    if (menu->isOptionChecked(MenuOption::FullscreenMirror)) {
-
-        menu->setIsOptionChecked(MenuOption::FullscreenMirror, false);
-        menu->setIsOptionChecked(MenuOption::FirstPersonLookAt, true);
-
-    } else if (menu->isOptionChecked(MenuOption::FirstPersonLookAt)) {
+    if (menu->isOptionChecked(MenuOption::FirstPersonLookAt)) {
 
         menu->setIsOptionChecked(MenuOption::FirstPersonLookAt, false);
         menu->setIsOptionChecked(MenuOption::LookAtCamera, true);
@@ -5844,12 +5858,16 @@ void Application::cycleCamera() {
     } else if (menu->isOptionChecked(MenuOption::LookAtCamera)) {
 
         menu->setIsOptionChecked(MenuOption::LookAtCamera, false);
-        menu->setIsOptionChecked(MenuOption::SelfieCamera, true);
+        if (menu->getActionForOption(MenuOption::SelfieCamera)->isVisible()) {
+            menu->setIsOptionChecked(MenuOption::SelfieCamera, true);
+        } else {
+            menu->setIsOptionChecked(MenuOption::FirstPersonLookAt, true);
+        }
 
     } else if (menu->isOptionChecked(MenuOption::SelfieCamera)) {
 
         menu->setIsOptionChecked(MenuOption::SelfieCamera, false);
-        menu->setIsOptionChecked(MenuOption::FullscreenMirror, true);
+        menu->setIsOptionChecked(MenuOption::FirstPersonLookAt, true);
 
     }
     cameraMenuChanged(); // handle the menu change
@@ -6275,7 +6293,7 @@ void Application::update(float deltaTime) {
                 myAvatar->setDriveKey(MyAvatar::TRANSLATE_Z, -1.0f * userInputMapper->getActionState(controller::Action::TRANSLATE_Z));
                 myAvatar->setDriveKey(MyAvatar::TRANSLATE_Y, userInputMapper->getActionState(controller::Action::TRANSLATE_Y));
                 myAvatar->setDriveKey(MyAvatar::TRANSLATE_X, userInputMapper->getActionState(controller::Action::TRANSLATE_X));
-                if (deltaTime > FLT_EPSILON) {
+                if (deltaTime > FLT_EPSILON && userInputMapper->getActionState(controller::Action::TRANSLATE_CAMERA_Z)  == 0.0f) {
                     myAvatar->setDriveKey(MyAvatar::PITCH, -1.0f * userInputMapper->getActionState(controller::Action::PITCH));
                     myAvatar->setDriveKey(MyAvatar::YAW, -1.0f * userInputMapper->getActionState(controller::Action::YAW));
                     myAvatar->setDriveKey(MyAvatar::DELTA_PITCH, -1.0f * userInputMapper->getActionState(controller::Action::DELTA_PITCH));
@@ -7046,7 +7064,7 @@ void Application::updateWindowTitle() const {
     auto accountManager = DependencyManager::get<AccountManager>();
     auto isInErrorState = nodeList->getDomainHandler().isInErrorState();
 
-    QString buildVersion = " - Kasen Community Edition v0.86.0 K2 - "
+    QString buildVersion = " - Vircadia - "
         + (BuildInfo::BUILD_TYPE == BuildInfo::BuildType::Stable ? QString("Version") : QString("Build"))
         + " " + applicationVersion();
 
@@ -7056,7 +7074,7 @@ void Application::updateWindowTitle() const {
         nodeList->getDomainHandler().isConnected() ? "" : " (NOT CONNECTED)";
     QString username = accountManager->getAccountInfo().getUsername();
 
-    setCrashAnnotation("username", username.toStdString());
+    setCrashAnnotation("sentry[user][username]", username.toStdString());
 
     QString currentPlaceName;
     if (isServerlessMode()) {
@@ -7331,6 +7349,7 @@ void Application::registerScriptEngineWithApplicationServices(const ScriptEngine
     scriptEngine->registerGlobalObject("AvatarList", DependencyManager::get<AvatarManager>().data());
 
     scriptEngine->registerGlobalObject("Camera", &_myCamera);
+    scriptEngine->registerGlobalObject("Screenshare", DependencyManager::get<ScreenshareScriptingInterface>().data());
 
 #if defined(Q_OS_MAC) || defined(Q_OS_WIN)
     scriptEngine->registerGlobalObject("SpeechRecognizer", DependencyManager::get<SpeechRecognizer>().data());
@@ -7729,7 +7748,7 @@ bool Application::askToReplaceDomainContent(const QString& url) {
             static const QString infoText = simpleWordWrap("Your domain's content will be replaced with a new content set. "
                 "If you want to save what you have now, create a backup before proceeding. For more information about backing up "
                 "and restoring content, visit the documentation page at: ", MAX_CHARACTERS_PER_LINE) +
-                "\nhttps://docs.highfidelity.com/create-and-explore/start-working-in-your-sandbox/restoring-sandbox-content";
+                "\nhttps://docs.vircadia.dev/host/maintain-domain/backup-domain.html";
 
             ModalDialogListener* dig = OffscreenUi::asyncQuestion("Are you sure you want to replace this domain's content set?",
                                                                   infoText, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
@@ -8483,7 +8502,7 @@ void Application::loadAddAvatarBookmarkDialog() const {
 void Application::loadAvatarBrowser() const {
     auto tablet = dynamic_cast<TabletProxy*>(DependencyManager::get<TabletScriptingInterface>()->getTablet("com.highfidelity.interface.tablet.system"));
     // construct the url to the marketplace item
-    QString url = NetworkingConstants::METAVERSE_SERVER_URL().toString() + "/marketplace?category=avatars";
+    QString url = MetaverseAPI::getCurrentMetaverseServerURL().toString() + "/marketplace?category=avatars";
 
     QString MARKETPLACES_INJECT_SCRIPT_PATH = "file:///" + qApp->applicationDirPath() + "/scripts/system/html/js/marketplacesInject.js";
     tablet->gotoWebScreen(url, MARKETPLACES_INJECT_SCRIPT_PATH);
@@ -8717,7 +8736,7 @@ bool Application::isThrottleRendering() const {
 bool Application::hasFocus() const {
     bool result = (QApplication::activeWindow() != nullptr);
 
-    
+
 #if defined(Q_OS_WIN)
     // On Windows, QWidget::activateWindow() - as called in setFocus() - makes the application's taskbar icon flash but doesn't
     // take user focus away from their current window. So also check whether the application is the user's current foreground
@@ -9238,7 +9257,7 @@ void Application::readArgumentsFromLocalSocket() const {
 
     // If we received a message, try to open it as a URL
     if (message.length() > 0) {
-        DependencyManager::get<WindowScriptingInterface>()->openUrl(QString::fromUtf8(message));
+        DependencyManager::get<AddressManager>()->handleLookupString(QString::fromUtf8(message));
     }
 }
 

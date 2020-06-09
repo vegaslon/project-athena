@@ -24,20 +24,23 @@
 #include "AccountSettings.h"
 #include "DataServerAccountInfo.h"
 #include "NetworkingConstants.h"
+#include "MetaverseAPI.h"
 #include "NetworkAccessManager.h"
-#include "SharedUtil.h"
+#include <SharedUtil.h>
 
 class JSONCallbackParameters {
 public:
     JSONCallbackParameters(QObject* callbackReceiver = nullptr,
-                           const QString& jsonCallbackMethod = QString(),
-                           const QString& errorCallbackMethod = QString());
+        const QString& jsonCallbackMethod = QString(),
+        const QString& errorCallbackMethod = QString(),
+        const QJsonObject& callbackData = QJsonObject());
 
     bool isEmpty() const { return !callbackReceiver; }
 
     QObject* callbackReceiver;
     QString jsonCallbackMethod;
     QString errorCallbackMethod;
+    QJsonObject callbackData;
 };
 
 namespace AccountManagerAuth {
@@ -97,7 +100,7 @@ public:
     void setTemporaryDomain(const QUuid& domainID, const QString& key);
     const QString& getTemporaryDomainKey(const QUuid& domainID) { return _accountInfo.getTemporaryDomainKey(domainID); }
 
-    QUrl getMetaverseServerURL() { return NetworkingConstants::METAVERSE_SERVER_URL(); }
+    QUrl getMetaverseServerURL() { return MetaverseAPI::getCurrentMetaverseServerURL(); }
 
     void removeAccountFromFile();
 

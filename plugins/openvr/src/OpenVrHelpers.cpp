@@ -100,7 +100,7 @@ QString getVrSettingString(const char* section, const char* setting) {
     vr::IVRSettings * vrSettings = vr::VRSettings();
     if (vrSettings) {
         vr::EVRSettingsError error = vr::VRSettingsError_None;
-        vrSettings->GetString(vr::k_pch_audio_Section, vr::k_pch_audio_OnPlaybackDevice_String, BUFFER, BUFFER_SIZE, &error);
+        vrSettings->GetString(vr::k_pch_audio_Section, setting, BUFFER, BUFFER_SIZE, &error);
         if (error == vr::VRSettingsError_None) {
             result = BUFFER;
         }
@@ -108,9 +108,11 @@ QString getVrSettingString(const char* section, const char* setting) {
     return result;
 }
 
+bool isHMDInErrorState = false;
+
 vr::IVRSystem* acquireOpenVrSystem() {
     bool hmdPresent = vr::VR_IsHmdPresent();
-    if (hmdPresent) {
+    if (hmdPresent && !isHMDInErrorState) {
         Lock lock(mutex);
         if (!activeHmd) {
             #if DEV_BUILD
@@ -122,6 +124,14 @@ vr::IVRSystem* acquireOpenVrSystem() {
             #if DEV_BUILD
                 qCDebug(displayplugins) << "OpenVR display: HMD is " << activeHmd << " error is " << eError;
             #endif
+
+            if (eError == vr::VRInitError_Init_HmdNotFound) {
+                isHMDInErrorState = true;
+                activeHmd = nullptr;
+                #if DEV_BUILD
+                    qCDebug(displayplugins) << "OpenVR: No HMD connected, setting nullptr!";
+                #endif
+            }
         }
         if (activeHmd) {
             #if DEV_BUILD
@@ -403,7 +413,6 @@ void showMinSpecWarning() {
     vrSystem->ResetSeatedZeroPose();
     QString imagePath = PathUtils::resourcesPath() + "/images/steam-min-spec-failed.png";
     vrOverlay->SetOverlayFromFile(minSpecFailedOverlay, imagePath.toLocal8Bit().toStdString().c_str());
-    vrOverlay->SetHighQualityOverlay(minSpecFailedOverlay);
     vrOverlay->SetOverlayWidthInMeters(minSpecFailedOverlay, 1.4f);
     vrOverlay->SetOverlayInputMethod(minSpecFailedOverlay, vr::VROverlayInputMethod_Mouse);
     vrOverlay->ShowOverlay(minSpecFailedOverlay);

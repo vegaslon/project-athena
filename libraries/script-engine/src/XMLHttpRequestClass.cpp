@@ -20,11 +20,10 @@
 #include <AccountManager.h>
 #include <NetworkAccessManager.h>
 #include <NetworkingConstants.h>
+#include <MetaverseAPI.h>
 
 #include "ResourceRequestObserver.h"
 #include "ScriptEngine.h"
-
-const QString METAVERSE_API_URL = NetworkingConstants::METAVERSE_SERVER_URL().toString() + "/api/";
 
 Q_DECLARE_METATYPE(QByteArray*)
 
@@ -110,6 +109,10 @@ QScriptValue XMLHttpRequestClass::getResponseHeader(const QString& name) const {
     return QScriptValue::NullValue;
 }
 
+/**jsdoc
+ * Called when the request's ready state changes.
+ * @callback XMLHttpRequest~onReadyStateChangeCallback
+ */
 void XMLHttpRequestClass::setReadyState(ReadyState readyState) {
     if (readyState != _readyState) {
         _readyState = readyState;
@@ -125,6 +128,8 @@ void XMLHttpRequestClass::open(const QString& method, const QString& url, bool a
         _method = method;
         _url.setUrl(url);
         _async = async;
+
+        const QString METAVERSE_API_URL = MetaverseAPI::getCurrentMetaverseServerURL().toString() + "/api/";
 
         if (url.toLower().left(METAVERSE_API_URL.length()) == METAVERSE_API_URL) {
             auto accountManager = DependencyManager::get<AccountManager>();
@@ -183,6 +188,10 @@ void XMLHttpRequestClass::doSend() {
     }
 }
 
+/**jsdoc
+ * Called when the request times out.
+ * @callback XMLHttpRequest~onTimeoutCallback 
+ */
 void XMLHttpRequestClass::requestTimeout() {
     if (_onTimeout.isFunction()) {
         _onTimeout.call(QScriptValue::NullValue);

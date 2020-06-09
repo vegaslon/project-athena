@@ -1,8 +1,12 @@
-Please read the [general build guide](BUILD.md) for information on dependencies required for all platforms. Only macOS specific instructions are found in this file.
+# Build OSX
+
+*Last Updated on April 30, 2019*
+
+Please read the [general build guide](BUILD.md) for information on dependencies required for all platforms. Only macOS specific instructions are found in this document.
 
 ### Homebrew
 
-[Homebrew](https://brew.sh/) is an excellent package manager for macOS. It makes install of some High Fidelity dependencies very simple.
+[Homebrew](https://brew.sh/) is an excellent package manager for macOS. It makes install of some Vircadia dependencies very simple.
 
     brew install cmake openssl
 
